@@ -17,7 +17,7 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import os, sys, threading, signal, re, subprocess, logging, logging.handlers
+import os, sys, threading, signal, re, subprocess, logging, logging.handlers, site
 import urllib.request
 from time import time, sleep, strftime, localtime
 from datetime import timedelta
@@ -56,7 +56,7 @@ if errors:
 		print("\nInstall required modules!\n")
 	raise SystemExit(1)
 
-VERSION: str = "1.0.16"
+VERSION: str = "1.0.18"
 
 #? Argument parser ------------------------------------------------------------------------------->
 if len(sys.argv) > 1:
@@ -98,6 +98,9 @@ DEFAULT_CONF: Template = Template(f'#? Config file for bpytop v. {VERSION}' + ''
 #* Color theme, looks for a .theme file in "/usr/[local/]share/bpytop/themes" and "~/.config/bpytop/themes", "Default" for builtin default theme.
 #* Prefix name by a plus sign (+) for a theme located in user themes folder, i.e. color_theme="+monokai"
 color_theme="$color_theme"
+
+#* If the theme set background should be shown, set to False if you want terminal background transparency
+theme_background=$theme_background
 
 #* Update time in milliseconds, increases automatically if set below internal loops processing time, recommended 2000 ms or above for better sample times for graphs.
 update_ms=$update_ms
@@ -186,10 +189,15 @@ if not os.path.isdir(CONFIG_DIR):
 		raise SystemExit(1)
 CONFIG_FILE: str = f'{CONFIG_DIR}/bpytop.conf'
 THEME_DIR: str = ""
-for td in ["local/", ""]:
-	if os.path.isdir(f'/usr/{td}share/bpytop/themes'):
-		THEME_DIR = f'/usr/{td}share/bpytop/themes'
+for td in site.getsitepackages() + [site.getusersitepackages()]:
+	if os.path.isdir(f'{td}/bpytop-themes'):
+		THEME_DIR = f'{td}/bpytop-themes'
 		break
+else:
+	for td in ["local/", ""]:
+		if os.path.isdir(f'/usr/{td}share/bpytop/themes'):
+			THEME_DIR = f'/usr/{td}share/bpytop/themes'
+			break
 USER_THEME_DIR: str = f'{CONFIG_DIR}/themes'
 
 CORES: int = psutil.cpu_count(logical=False) or 1
@@ -340,9 +348,10 @@ def timeit_decorator(func):
 class Config:
 	'''Holds all config variables and functions for loading from and saving to disk'''
 	keys: List[str] = ["color_theme", "update_ms", "proc_sorting", "proc_reversed", "proc_tree", "check_temp", "draw_clock", "background_update", "custom_cpu_name", "proc_colors", "proc_gradient", "proc_per_core", "proc_mem_bytes",
-						"disks_filter", "update_check", "log_level", "mem_graphs", "show_swap", "swap_disk", "show_disks", "net_download", "net_upload", "net_auto", "net_color_fixed", "show_init", "mini_mode"]
+						"disks_filter", "update_check", "log_level", "mem_graphs", "show_swap", "swap_disk", "show_disks", "net_download", "net_upload", "net_auto", "net_color_fixed", "show_init", "mini_mode", "theme_background"]
 	conf_dict: Dict[str, Union[str, int, bool]] = {}
 	color_theme: str = "Default"
+	theme_background: bool = True
 	update_ms: int = 2000
 	proc_sorting: str = "cpu lazy"
 	proc_reversed: bool = False
@@ -449,6 +458,9 @@ class Config:
 		if isinstance(new_config["update_ms"], int) and new_config["update_ms"] < 100:
 			new_config["update_ms"] = 100
 			self.warnings.append(f'Config key "update_ms" can\'t be lower than 100!')
+		for net_name in ["net_download", "net_upload"]:
+			if net_name in new_config and not new_config[net_name][0].isdigit(): # type: ignore
+				new_config[net_name] = "_error_"
 		return new_config
 
 	def save_config(self):
@@ -463,7 +475,7 @@ class Config:
 try:
 	CONFIG: Config = Config(CONFIG_FILE)
 	if DEBUG:
-		errlog.setLevel(DEBUG)
+		errlog.setLevel(logging.DEBUG)
 	else:
 		errlog.setLevel(getattr(logging, CONFIG.log_level))
 		if CONFIG.log_level == "DEBUG": DEBUG = True
@@ -483,13 +495,18 @@ except Exception as e:
 	errlog.exception(f'{e}')
 	raise SystemExit(1)
 
+if psutil.version_info[0] < 5 or (psutil.version_info[0] == 5 and psutil.version_info[1] < 7):
+	warn = f'psutil version {".".join(str(x) for x in psutil.version_info)} detected, version 5.7.0 or later required for full functionality!'
+	print("WARNING!", warn)
+	errlog.warning(warn)
+
 
 #? Classes --------------------------------------------------------------------------------------->
 
 class Term:
 	"""Terminal info and commands"""
-	width: int = os.get_terminal_size().columns	#* Current terminal width in columns
-	height: int = os.get_terminal_size().lines	#* Current terminal height in lines
+	width: int = 0
+	height: int = 0
 	resized: bool = False
 	_w : int = 0
 	_h : int = 0
@@ -1126,7 +1143,8 @@ class Theme:
 				for _ in range(101):
 					self.gradient[name] += [c]
 		#* Set terminal colors
-		Term.fg, Term.bg = self.main_fg, self.main_bg
+		Term.fg = self.main_fg
+		Term.bg = self.main_bg if CONFIG.theme_background else "\033[49m"
 		Draw.now(self.main_fg, self.main_bg)
 
 	@classmethod
@@ -3523,6 +3541,11 @@ class Menu:
 				'',
 				'For theme updates see:',
 				'https://github.com/aristocratos/bpytop'],
+			"theme_background" : [
+				'If the theme set background should be shown.',
+				'',
+				'Set to False if you want terminal background',
+				'transparency.'],
 			"mini_mode" : [
 				'Enable bpytop mini mode at start.',
 				'',
@@ -3811,6 +3834,9 @@ class Menu:
 								setattr(CONFIG, selected, input_val)
 								if selected.startswith("net_"):
 									NetCollector.net_min = {"download" : -1, "upload" : -1}
+								elif selected == "draw_clock":
+									Box.clock_on = True if len(CONFIG.draw_clock) > 0 else False
+									if not Box.clock_on: Draw.clear("clock", saved=True)
 							Term.refresh(force=True)
 							cls.resized = False
 					elif key == "backspace" and len(input_val) > 0:
@@ -3847,6 +3873,9 @@ class Menu:
 					if selected in ["net_auto", "net_color_fixed"]:
 						if selected == "net_auto": NetCollector.auto_min = CONFIG.net_auto
 						NetBox.redraw = True
+					if selected == "theme_background":
+						Term.bg = THEME.main_bg if CONFIG.theme_background else "\033[49m"
+						Draw.now(Term.bg)
 					Term.refresh(force=True)
 					cls.resized = False
 				elif key in ["left", "right"] and selected == "color_theme" and len(Theme.themes) > 1:
@@ -3966,6 +3995,68 @@ class UpdateChecker:
 				except Exception as e:
 					errlog.exception(f'{e}')
 
+class Init:
+	running: bool = True
+	initbg_colors: List[str] = []
+	initbg_data: List[int]
+	initbg_up: Graph
+	initbg_down: Graph
+	resized = False
+
+	@classmethod
+	def start(cls):
+		Draw.buffer("init", z=1)
+		Draw.buffer("initbg", z=10)
+		for i in range(51):
+			for _ in range(2): cls.initbg_colors.append(Color.fg(i, i, i))
+		Draw.buffer("banner", (f'{Banner.draw(Term.height // 2 - 10, center=True)}{Mv.d(1)}{Mv.l(11)}{Colors.black_bg}{Colors.default}'
+				f'{Fx.b}{Fx.i}Version: {VERSION}{Fx.ui}{Fx.ub}{Term.bg}{Term.fg}{Color.fg("#50")}'), z=2)
+		for _i in range(7):
+			perc = f'{str(round((_i + 1) * 14 + 2)) + "%":>5}'
+			Draw.buffer("+banner", f'{Mv.to(Term.height // 2 - 2 + _i, Term.width // 2 - 28)}{Fx.trans(perc)}{Symbol.v_line}')
+
+		Draw.out("banner")
+		Draw.buffer("+init!", f'{Color.fg("#cc")}{Fx.b}{Mv.to(Term.height // 2 - 2, Term.width // 2 - 21)}{Mv.save}')
+
+		cls.initbg_data = [randint(0, 100) for _ in range(Term.width * 2)]
+		cls.initbg_up = Graph(Term.width, Term.height // 2, cls.initbg_colors, cls.initbg_data, invert=True)
+		cls.initbg_down = Graph(Term.width, Term.height // 2, cls.initbg_colors, cls.initbg_data, invert=False)
+
+	@classmethod
+	def success(cls):
+		if not CONFIG.show_init or cls.resized: return
+		cls.draw_bg(5)
+		Draw.buffer("+init!", f'{Mv.restore}{Symbol.ok}\n{Mv.r(Term.width // 2 - 22)}{Mv.save}')
+
+	@staticmethod
+	def fail(err):
+		if CONFIG.show_init:
+			Draw.buffer("+init!", f'{Mv.restore}{Symbol.fail}')
+			sleep(2)
+		errlog.exception(f'{err}')
+		clean_quit(1, errmsg=f'Error during init! See {CONFIG_DIR}/error.log for more information.')
+
+	@classmethod
+	def draw_bg(cls, times: int = 5):
+		for _ in range(times):
+			sleep(0.05)
+			x = randint(0, 100)
+			Draw.buffer("initbg", f'{Fx.ub}{Mv.to(0, 0)}{cls.initbg_up(x)}{Mv.to(Term.height // 2, 0)}{cls.initbg_down(x)}')
+			Draw.out("initbg", "banner", "init")
+
+	@classmethod
+	def done(cls):
+		cls.running = False
+		if not CONFIG.show_init: return
+		if cls.resized:
+			Draw.now(Term.clear)
+		else:
+			cls.draw_bg(10)
+		Draw.clear("initbg", "banner", "init", saved=True)
+		if cls.resized: return
+		del cls.initbg_up, cls.initbg_down, cls.initbg_data, cls.initbg_colors
+
+
 #? Functions ------------------------------------------------------------------------------------->
 
 def get_cpu_name() -> str:
@@ -3999,10 +4090,12 @@ def get_cpu_name() -> str:
 		name = nlist[nlist.index("CPU")+1]
 	elif "Ryzen" in name:
 		name = " ".join(nlist[nlist.index("Ryzen"):nlist.index("Ryzen")+3])
+	elif "Duo" in name and "@" in name:
+		name = " ".join(nlist[:nlist.index("@")])
 	elif "CPU" in name and not nlist[0] == "CPU":
 		name = nlist[nlist.index("CPU")-1]
 
-	return name
+	return name.replace("Processor ", "").replace("CPU ", "").replace("(R)", "").replace("(TM)", "").replace("Intel ", "")
 
 def create_box(x: int = 0, y: int = 0, width: int = 0, height: int = 0, title: str = "", title2: str = "", line_color: Color = None, title_color: Color = None, fill: bool = True, box = None) -> str:
 	'''Create a box from a box object or by given arguments'''
@@ -4305,90 +4398,34 @@ def process_keys():
 
 CPU_NAME: str = get_cpu_name()
 
+THEME: Theme
 
-if __name__ == "__main__":
+def main():
+	global THEME
+
+	Term.width = os.get_terminal_size().columns
+	Term.height = os.get_terminal_size().lines
 
 	#? Init -------------------------------------------------------------------------------------->
 	if DEBUG: TimeIt.start("Init")
-
-	class Init:
-		running: bool = True
-		initbg_colors: List[str] = []
-		initbg_data: List[int]
-		initbg_up: Graph
-		initbg_down: Graph
-		resized = False
-
-		@staticmethod
-		def fail(err):
-			if CONFIG.show_init:
-				Draw.buffer("+init!", f'{Mv.restore}{Symbol.fail}')
-				sleep(2)
-			errlog.exception(f'{err}')
-			clean_quit(1, errmsg=f'Error during init! See {CONFIG_DIR}/error.log for more information.')
-
-		@classmethod
-		def success(cls, start: bool = False):
-			if not CONFIG.show_init or cls.resized: return
-			if start:
-				Draw.buffer("init", z=1)
-				Draw.buffer("initbg", z=10)
-				for i in range(51):
-					for _ in range(2): cls.initbg_colors.append(Color.fg(i, i, i))
-				Draw.buffer("banner", (f'{Banner.draw(Term.height // 2 - 10, center=True)}{Mv.d(1)}{Mv.l(11)}{Colors.black_bg}{Colors.default}'
-						f'{Fx.b}{Fx.i}Version: {VERSION}{Fx.ui}{Fx.ub}{Term.bg}{Term.fg}{Color.fg("#50")}'), z=2)
-				for _i in range(7):
-					perc = f'{str(round((_i + 1) * 14 + 2)) + "%":>5}'
-					Draw.buffer("+banner", f'{Mv.to(Term.height // 2 - 2 + _i, Term.width // 2 - 28)}{Fx.trans(perc)}{Symbol.v_line}')
-
-				Draw.out("banner")
-				Draw.buffer("+init!", f'{Color.fg("#cc")}{Fx.b}{Mv.to(Term.height // 2 - 2, Term.width // 2 - 21)}{Mv.save}')
-
-				cls.initbg_data = [randint(0, 100) for _ in range(Term.width * 2)]
-				cls.initbg_up = Graph(Term.width, Term.height // 2, cls.initbg_colors, cls.initbg_data, invert=True)
-				cls.initbg_down = Graph(Term.width, Term.height // 2, cls.initbg_colors, cls.initbg_data, invert=False)
-
-			if start: return
-
-			cls.draw_bg(5)
-			Draw.buffer("+init!", f'{Mv.restore}{Symbol.ok}\n{Mv.r(Term.width // 2 - 22)}{Mv.save}')
-
-		@classmethod
-		def draw_bg(cls, times: int = 5):
-			for _ in range(times):
-				sleep(0.05)
-				x = randint(0, 100)
-				Draw.buffer("initbg", f'{Fx.ub}{Mv.to(0, 0)}{cls.initbg_up(x)}{Mv.to(Term.height // 2, 0)}{cls.initbg_down(x)}')
-				Draw.out("initbg", "banner", "init")
-
-		@classmethod
-		def done(cls):
-			cls.running = False
-			if not CONFIG.show_init: return
-			if cls.resized:
-				Draw.now(Term.clear)
-			else:
-				cls.draw_bg(10)
-			Draw.clear("initbg", "banner", "init", saved=True)
-			if cls.resized: return
-			del cls.initbg_up, cls.initbg_down, cls.initbg_data, cls.initbg_colors
-
 
 	#? Switch to alternate screen, clear screen, hide cursor, enable mouse reporting and disable input echo
 	Draw.now(Term.alt_screen, Term.clear, Term.hide_cursor, Term.mouse_on, Term.title("BpyTOP"))
 	Term.echo(False)
 	Term.refresh(force=True)
+
+	#? Start a thread checking for updates while running init
 	if CONFIG.update_check: UpdateChecker.run()
 
 	#? Draw banner and init status
-	if CONFIG.show_init:
-		Init.success(start=True)
+	if CONFIG.show_init and not Init.resized:
+		Init.start()
 
 	#? Load theme
 	if CONFIG.show_init:
 		Draw.buffer("+init!", f'{Mv.restore}{Fx.trans("Loading theme and creating colors... ")}{Mv.save}')
 	try:
-		THEME: Theme = Theme(CONFIG.color_theme)
+		THEME = Theme(CONFIG.color_theme)
 	except Exception as e:
 		Init.fail(e)
 	else:
@@ -4460,7 +4497,6 @@ if __name__ == "__main__":
 	else:
 		Init.success()
 
-
 	Init.done()
 	Term.refresh()
 	Draw.out(clear=True)
@@ -4470,7 +4506,7 @@ if __name__ == "__main__":
 
 	#? Main loop ------------------------------------------------------------------------------------->
 
-	def main():
+	def run():
 		while not False:
 			Term.refresh()
 			Timer.stamp()
@@ -4483,10 +4519,14 @@ if __name__ == "__main__":
 
 	#? Start main loop
 	try:
-		main()
+		run()
 	except Exception as e:
 		errlog.exception(f'{e}')
 		clean_quit(1)
 	else:
 		#? Quit cleanly even if false starts being true...
 		clean_quit()
+
+
+if __name__ == "__main__":
+	main()
