@@ -1,4 +1,4 @@
-# ![bpytop](Imgs/logo.png)
+# ![bpytop](https://github.com/aristocratos/bpytop/raw/master/Imgs/logo.png)
 
 ![Linux](https://img.shields.io/badge/-Linux-grey?logo=linux)
 ![OSX](https://img.shields.io/badge/-OSX-black?logo=apple)
@@ -28,11 +28,11 @@
 
 ## Documents
 
-#### [CHANGELOG.md](CHANGELOG.md)
+#### [CHANGELOG.md](https://github.com/aristocratos/bpytop/blob/master/CHANGELOG.md)
 
-#### [CONTRIBUTING.md](CONTRIBUTING.md)
+#### [CONTRIBUTING.md](https://github.com/aristocratos/bpytop/blob/master/CONTRIBUTING.md)
 
-#### [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+#### [CODE_OF_CONDUCT.md](https://github.com/aristocratos/bpytop/blob/master/CODE_OF_CONDUCT.md)
 
 ## Description
 
@@ -58,7 +58,7 @@ Python port of [bashtop](https://github.com/aristocratos/bashtop).
 
 Bpytop uses the same theme files as bashtop so any theme made for bashtop will work.
 
-See [themes](themes) folder for available themes.
+See [themes](https://github.com/aristocratos/bpytop/tree/master/themes) folder for available themes.
 
 The `make install` command places the default themes in `/usr/local/share/bpytop/themes`.
 User created themes should be placed in `$HOME/.config/bpytop/themes`.
@@ -112,24 +112,24 @@ Dropbear seems to not be able to set correct locale. So if accessing bpytop over
 ## Screenshots
 
 Main UI showing details for a selected process.
-![Screenshot 1](Imgs/main.png)
+![Screenshot 1](https://github.com/aristocratos/bpytop/raw/master/Imgs/main.png)
 
 Main UI in mini mode.
-![Screenshot 2](Imgs/mini.png)
+![Screenshot 2](https://github.com/aristocratos/bpytop/raw/master/Imgs/mini.png)
 
 Main menu.
-![Screenshot 3](Imgs/menu.png)
+![Screenshot 3](https://github.com/aristocratos/bpytop/raw/master/Imgs/menu.png)
 
 Options menu.
-![Screenshot 4](Imgs/options.png)
+![Screenshot 4](https://github.com/aristocratos/bpytop/raw/master/Imgs/options.png)
 
 ## Installation
 
 ### PyPi (will always have latest version)
 
-> Install python3 and pip
+> Install or update to latest version
 ``` bash
-python3 -m pip install bpytop
+pip3 install bpytop --upgrade
 ```
 
 ### Arch Linux
@@ -247,11 +247,14 @@ Config files stored in "$HOME/.config/bpytop" folder
 "/etc/bpytop.conf" will be used as default seed for config file creation if it exists.
 
 ```bash
-#? Config file for bpytop v. 1.0.0
+#? Config file for bpytop v. 1.0.18
 
 #* Color theme, looks for a .theme file in "/usr/[local/]share/bpytop/themes" and "~/.config/bpytop/themes", "Default" for builtin default theme.
 #* Prefix name by a plus sign (+) for a theme located in user themes folder, i.e. color_theme="+monokai"
 color_theme="Default"
+
+#* If the theme set background should be shown, set to False if you want terminal background transparency
+theme_background=True
 
 #* Update time in milliseconds, increases automatically if set below internal loops processing time, recommended 2000 ms or above for better sample times for graphs.
 update_ms=2000
@@ -273,9 +276,12 @@ proc_colors=True
 proc_gradient=True
 
 #* If process cpu usage should be of the core it's running on or usage of the total available cpu power.
-proc_per_core=False
+proc_per_core=True
 
-#* Check cpu temperature, needs "vcgencmd" on Raspberry Pi and "osx-cpu-temp" on MacOS X.
+#* Show process memory as bytes instead of percent
+proc_mem_bytes=True
+
+#* Check cpu temperature, needs "osx-cpu-temp" on MacOS X.
 check_temp=True
 
 #* Draw a clock at top of screen, formatting according to strftime, empty string to disable.
@@ -295,13 +301,23 @@ disks_filter=""
 mem_graphs=True
 
 #* If swap memory should be shown in memory box.
-show_swap=False
+show_swap=True
 
 #* Show swap as a disk, ignores show_swap value above, inserts itself after first disk.
 swap_disk=True
 
 #* If mem box should be split to also show disks info.
 show_disks=True
+
+#* Set fixed values for network graphs, default "10M" = 10 Mibibytes, possible units "K", "M", "G", append with "bit" for bits instead of bytes, i.e "100mbit"
+net_download="100Mbit"
+net_upload="100Mbit"
+
+#* Start in network graphs auto rescaling mode, ignores any values set above and rescales down to 10 Kibibytes at the lowest.
+net_auto=True
+
+#* If the network graphs color gradient should scale to bandwith usage or auto scale, bandwith usage is based on "net_download" and "net_upload" values
+net_color_fixed=False
 
 #* Show init screen at startup, the init screen is purely cosmetical
 show_init=True
@@ -316,9 +332,10 @@ mini_mode=False
 #* The level set includes all lower levels, i.e. "DEBUG" will show all logging info.
 log_level=WARNING
 
+
 ```
 
-#### Command line options: (not yet implemented)
+#### Command line options:
 
 ``` text
 USAGE: bpytop [argument]
@@ -332,8 +349,15 @@ Arguments:
 
 ## TODO
 
-- [ ] See TODOs from [Bashtop](https://github.com/aristocratos/bashtop#todo).
+- [ ] Add gpu temp and usage.
+- [ ] Add cpu and mem stats for docker containers. (If feasible)
+- [x] Change process list to line scroll instead of page change.
+- [ ] Add options for resizing all boxes.
+- [x] Add command line argument parsing.
+
+- [ ] Miscellaneous optimizations and code cleanup.
+
 
 ## LICENSE
 
-[Apache License 2.0](LICENSE)
+[Apache License 2.0](https://github.com/aristocratos/bpytop/blob/master/LICENSE)

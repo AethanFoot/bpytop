@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.0.21
+
+* Fixed: Clean excess whitespace from CPU model name, by @RedBearAK
+* Changed: README.md absolute paths to work on PyPi
+
+## v1.0.20
+
+* Release bump to fix pypi and source version missmatch
+
+## v1.0.19
+
+* Changed: net_auto variable now default to True
+* Fixed: Sorting out negative cpu temperature values from bad sensors
+
 ## v1.0.18
 
 * Fixed: Init screen and error log level when starting from pip installation
